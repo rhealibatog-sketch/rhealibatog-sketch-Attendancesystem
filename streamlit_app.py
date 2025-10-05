@@ -226,7 +226,7 @@ def show_mark_attendance(system):
             method = st.selectbox("Method", 
                                 ["Manual", "QR Code", "Biometric", "Facial Recognition"])
             department = st.selectbox("Department", 
-                                    ["Computer Science", "Electrical", "Mechanical", "Civil", "Other", "Not Specified"])
+                                    ["Computer Science", "Computer Engineering", "Information Technology", "Other", "Not Specified"])
         
         submitted = st.form_submit_button("✅ Mark Attendance", use_container_width=True)
         
@@ -499,4 +499,5 @@ def show_reports(system):
             )
 
 if __name__ == "__main__":
+
     main()
