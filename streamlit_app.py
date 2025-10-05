@@ -291,7 +291,7 @@ def show_manage_students(system):
             
             with col2:
                 department = st.selectbox("Department", 
-                                        ["Computer Science", "Electrical", "Mechanical", "Civil", "Business", "Arts", "Other"])
+                                         ["Computer Science", "Computer Engineering", "Information Technology", "Other", "Not Specified"])
                 year = st.selectbox("Year", ["1st", "2nd", "3rd", "4th", "Graduate"])
             
             submitted = st.form_submit_button("➕ Add Student", use_container_width=True)
@@ -501,3 +501,4 @@ def show_reports(system):
 if __name__ == "__main__":
 
     main()
+
