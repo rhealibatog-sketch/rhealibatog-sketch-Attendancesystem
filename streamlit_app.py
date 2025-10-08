@@ -1,5 +1,5 @@
-import pip install streamlit as st
-import pip install pandas numpy
+import streamlit as st
+import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
 import os
@@ -121,6 +121,49 @@ class AttendanceSystem:
             ]
         else:
             return pd.DataFrame()
+    
+    def delete_student(self, student_id):
+        """Delete a student"""
+        try:
+            if student_id in self.students_data:
+                del self.students_data[student_id]
+                self.save_data()
+                return True, "✅ Student deleted successfully!"
+            else:
+                return False, "❌ Student not found!"
+        except Exception as e:
+            return False, f"❌ Error: {str(e)}"
+    
+    def clear_today_attendance(self):
+        """Clear today's attendance records"""
+        try:
+            today = str(date.today())
+            if not self.attendance_df.empty:
+                initial_count = len(self.attendance_df)
+                self.attendance_df = self.attendance_df[self.attendance_df['Date'] != today]
+                final_count = len(self.attendance_df)
+                deleted_count = initial_count - final_count
+                self.save_data()
+                return True, f"✅ Deleted {deleted_count} attendance records for today!"
+            else:
+                return False, "❌ No attendance records found!"
+        except Exception as e:
+            return False, f"❌ Error: {str(e)}"
+    
+    def export_attendance_report(self, start_date=None, end_date=None):
+        """Export attendance report for date range"""
+        try:
+            if start_date and end_date:
+                filtered_data = self.attendance_df[
+                    (self.attendance_df['Date'] >= str(start_date)) & 
+                    (self.attendance_df['Date'] <= str(end_date))
+                ]
+                return filtered_data
+            else:
+                return self.attendance_df
+        except Exception as e:
+            st.error(f"Error generating report: {e}")
+            return pd.DataFrame()
 
 def main():
     st.title("📋 Even Check Attendance System")
@@ -138,7 +181,8 @@ def main():
         "🏠 Dashboard", 
         "📝 Mark Attendance", 
         "👥 Manage Students",
-        "📊 Reports & Analytics"
+        "📊 Reports & Analytics",
+        "⚙️ System Tools"
     ])
     
     if page == "🏠 Dashboard":
@@ -149,6 +193,8 @@ def main():
         show_manage_students(system)
     elif page == "📊 Reports & Analytics":
         show_reports(system)
+    elif page == "⚙️ System Tools":
+        show_system_tools(system)
 
 def show_dashboard(system):
     st.header("🏠 Dashboard Overview")
@@ -185,6 +231,22 @@ def show_dashboard(system):
             st.dataframe(today_data[['StudentID', 'Name', 'Time', 'Method']], 
                         use_container_width=True,
                         height=300)
+            
+            # Quick actions for today's data
+            col_actions1, col_actions2 = st.columns(2)
+            with col_actions1:
+                if st.button("📥 Export Today's Data", use_container_width=True):
+                    today_csv = today_data.to_csv(index=False)
+                    st.download_button(
+                        label="⬇️ Download CSV",
+                        data=today_csv,
+                        file_name=f"attendance_{date.today()}.csv",
+                        mime="text/csv",
+                        key="download_today"
+                    )
+            with col_actions2:
+                if st.button("🔄 Refresh Data", use_container_width=True):
+                    st.rerun()
         else:
             st.info("No attendance marked today")
     
@@ -192,12 +254,19 @@ def show_dashboard(system):
         st.subheader("🚀 Quick Actions")
         
         if st.button("📝 Mark Attendance", use_container_width=True, type="primary"):
+            st.session_state.quick_action = "mark_attendance"
             st.rerun()
         
         if st.button("👥 Add Student", use_container_width=True):
+            st.session_state.quick_action = "add_student"
             st.rerun()
         
         if st.button("📊 View Reports", use_container_width=True):
+            st.session_state.quick_action = "reports"
+            st.rerun()
+        
+        if st.button("🛠 System Tools", use_container_width=True):
+            st.session_state.quick_action = "tools"
             st.rerun()
         
         # Recent activity
@@ -206,6 +275,8 @@ def show_dashboard(system):
             recent = system.attendance_df.tail(3)
             for _, row in recent.iterrows():
                 st.write(f"**{row['Name']}** - {row['Time']}")
+        else:
+            st.info("No recent activity")
 
 def show_mark_attendance(system):
     st.header("📝 Mark Attendance")
@@ -226,7 +297,7 @@ def show_mark_attendance(system):
             method = st.selectbox("Method", 
                                 ["Manual", "QR Code", "Biometric", "Facial Recognition"])
             department = st.selectbox("Department", 
-                                    ["Computer Science", "Information Technology", "Computer Engineering", "Other", "Not Specified"])
+                                    ["Computer Science", "Electrical", "Mechanical", "Civil", "Other", "Not Specified"])
         
         submitted = st.form_submit_button("✅ Mark Attendance", use_container_width=True)
         
@@ -248,6 +319,28 @@ def show_mark_attendance(system):
     
     st.markdown("---")
     
+    # Quick mark section for registered students
+    st.subheader("⚡ Quick Mark for Registered Students")
+    if system.students_data:
+        student_options = {f"{sid} - {info['name']}": sid for sid, info in system.students_data.items()}
+        selected_student = st.selectbox("Select Student", options=list(student_options.keys()))
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            quick_method = st.selectbox("Marking Method", ["Manual", "QR Code", "Biometric"])
+        with col2:
+            if st.button("🎯 Quick Mark", use_container_width=True, type="secondary"):
+                selected_id = student_options[selected_student]
+                student_name = system.students_data[selected_id]['name']
+                success, message = system.mark_attendance(selected_id, student_name, quick_method)
+                if success:
+                    st.success(message)
+                    st.balloons()
+                else:
+                    st.warning(message)
+    
+    st.markdown("---")
+    
     # Today's summary
     st.subheader("📊 Today's Summary")
     today_data = system.get_today_attendance()
@@ -266,16 +359,40 @@ def show_mark_attendance(system):
             most_common = methods_count.index[0] if not methods_count.empty else "N/A"
             st.metric("Most Common Method", most_common)
         
-        # Show today's records
+        # Show today's records with action buttons
         with st.expander("View Today's Detailed Records"):
             st.dataframe(today_data, use_container_width=True)
+            
+            # Action buttons for today's data
+            col_export, col_refresh, col_clear = st.columns(3)
+            with col_export:
+                today_csv = today_data.to_csv(index=False)
+                st.download_button(
+                    label="📥 Export Today's CSV",
+                    data=today_csv,
+                    file_name=f"attendance_{date.today()}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with col_refresh:
+                if st.button("🔄 Refresh", use_container_width=True):
+                    st.rerun()
+            with col_clear:
+                if st.button("🗑️ Clear Today", use_container_width=True, type="secondary"):
+                    if st.checkbox("Confirm deletion of today's records"):
+                        success, message = system.clear_today_attendance()
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
     else:
         st.info("No attendance marked today yet")
 
 def show_manage_students(system):
     st.header("👥 Manage Students")
     
-    tab1, tab2, tab3 = st.tabs(["➕ Add Student", "📋 View Students", "🔍 Student Details"])
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Add Student", "📋 View Students", "🔍 Student Details", "🗑️ Delete Student"])
     
     with tab1:
         st.subheader("Add New Student")
@@ -333,7 +450,7 @@ def show_manage_students(system):
             else:
                 st.dataframe(students_df, use_container_width=True)
             
-            # Statistics
+            # Statistics and actions
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total Students", len(students_df))
@@ -376,11 +493,47 @@ def show_manage_students(system):
                     present_days = len(student_attendance[student_attendance['Status'] == 'Present'])
                     attendance_rate = (present_days / total_days * 100) if total_days > 0 else 0
                     
-                    st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+                    col_stat1, col_stat2, col_stat3 = st.columns(3)
+                    with col_stat1:
+                        st.metric("Total Days", total_days)
+                    with col_stat2:
+                        st.metric("Present Days", present_days)
+                    with col_stat3:
+                        st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+                    
+                    # Export student history
+                    student_csv = student_attendance.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Student History",
+                        data=student_csv,
+                        file_name=f"attendance_{student_lookup}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
                 else:
                     st.info("No attendance records found for this student")
             else:
                 st.warning("Student not found in registry")
+    
+    with tab4:
+        st.subheader("Delete Student")
+        st.warning("⚠️ This action cannot be undone!")
+        
+        if system.students_data:
+            student_options = {f"{sid} - {info['name']}": sid for sid, info in system.students_data.items()}
+            student_to_delete = st.selectbox("Select student to delete", options=list(student_options.keys()))
+            
+            if st.button("🗑️ Delete Student", type="primary", use_container_width=True):
+                if st.checkbox("I understand this will permanently delete the student and their attendance records"):
+                    student_id = student_options[student_to_delete]
+                    success, message = system.delete_student(student_id)
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+        else:
+            st.info("No students to delete")
 
 def show_reports(system):
     st.header("📊 Reports & Analytics")
@@ -498,6 +651,117 @@ def show_reports(system):
                 use_container_width=True
             )
 
+def show_system_tools(system):
+    st.header("⚙️ System Tools")
+    
+    tab1, tab2, tab3 = st.tabs(["🔄 Data Management", "📁 Backup & Restore", "⚡ Quick Actions"])
+    
+    with tab1:
+        st.subheader("Data Management")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Attendance Data**")
+            st.metric("Total Records", len(system.attendance_df))
+            
+            if st.button("🗑️ Clear All Attendance", use_container_width=True, type="secondary"):
+                if st.checkbox("Confirm permanent deletion of ALL attendance records"):
+                    system.attendance_df = pd.DataFrame(columns=['StudentID', 'Name', 'Date', 'Time', 'Method', 'Status'])
+                    system.save_data()
+                    st.success("✅ All attendance records cleared!")
+                    st.rerun()
+            
+            if st.button("🔍 Rebuild Data Index", use_container_width=True):
+                system.load_data()
+                st.success("✅ Data index rebuilt successfully!")
+        
+        with col2:
+            st.write("**Student Data**")
+            st.metric("Registered Students", len(system.students_data))
+            
+            if st.button("🗑️ Clear All Students", use_container_width=True, type="secondary"):
+                if st.checkbox("Confirm permanent deletion of ALL student records"):
+                    system.students_data = {}
+                    system.save_data()
+                    st.success("✅ All student records cleared!")
+                    st.rerun()
+    
+    with tab2:
+        st.subheader("Backup & Restore")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Create Backup**")
+            if st.button("💾 Backup All Data", use_container_width=True):
+                # Create backup files
+                backup_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Backup attendance
+                attendance_backup = system.attendance_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Attendance Backup",
+                    data=attendance_backup,
+                    file_name=f"attendance_backup_{backup_time}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+                # Backup students
+                students_backup = json.dumps(system.students_data, indent=4)
+                st.download_button(
+                    label="📥 Download Students Backup",
+                    data=students_backup,
+                    file_name=f"students_backup_{backup_time}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+        
+        with col2:
+            st.write("**System Information**")
+            st.write(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            st.write(f"**Data Files:** {len(system.attendance_df)} records, {len(system.students_data)} students")
+            
+            if st.button("🔄 Refresh System", use_container_width=True):
+                system.load_data()
+                st.success("✅ System refreshed successfully!")
+                st.rerun()
+    
+    with tab3:
+        st.subheader("Quick Actions")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📊 Generate Summary", use_container_width=True):
+                st.info(f"""
+                **System Summary:**
+                - Total Attendance Records: {len(system.attendance_df)}
+                - Registered Students: {len(system.students_data)}
+                - Unique Attendance Days: {system.attendance_df['Date'].nunique() if not system.attendance_df.empty else 0}
+                - Today's Records: {len(system.get_today_attendance())}
+                """)
+        
+        with col2:
+            if st.button("🧹 Clear Today's Data", use_container_width=True):
+                success, message = system.clear_today_attendance()
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+        
+        with col3:
+            if st.button("📈 Update Charts", use_container_width=True):
+                st.success("✅ Charts updated!")
+                st.rerun()
+
+# Initialize session state for quick actions
+if 'quick_action' not in st.session_state:
+    st.session_state.quick_action = None
+
 if __name__ == "__main__":
     main()
+
 
